@@ -1,0 +1,21 @@
+name: Deploy Idem to Hetzner
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /opt/idem
+            git pull origin main
+            /opt/idem/venv/bin/pip install -r requirements.txt
+            sudo systemctl restart idem

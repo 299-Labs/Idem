@@ -1,2 +1,2 @@
-# Toggle
-A customizable Reddit client where users control how their feed is ranked via modes and adjustable preferences
+# Idem
+A customizable recommendation system where users own their profile

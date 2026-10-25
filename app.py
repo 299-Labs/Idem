@@ -2,9 +2,118 @@ import json
 import math
 import time
 import feedparser
+import html
 import streamlit as st
+from sources import fetch_unified_catalog
 
-st.set_page_config(page_title="Idem — Sovereign Reading", page_icon="🧭", layout="wide")
+
+st.set_page_config(page_title="Idem — Sovereign Reading", page_icon="assets/icon.png", layout="wide")
+
+st.markdown("""
+<style>
+    /* Card link wrapper: resets default anchor styling */
+    .idem-card-link {
+        text-decoration: none !important;
+        color: inherit !important;
+        display: block;
+        margin-bottom: 12px;
+    }
+
+    /* Base card: borderless by default (transparent prevents layout shifts on hover) */
+    .idem-card {
+        background-color: #cee0ff;
+        border-radius: 8px;
+        padding: 16px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        border: 1px solid transparent;
+        border-left: 5px solid transparent;
+        transition: all 0.18s ease-in-out;
+        cursor: pointer;
+    }
+
+    /* Hover state: darker blue accent (#1b5693), subtle border and elevation */
+    .idem-card-link:hover .idem-card {
+        border-color: rgba(95, 117, 142, 0.2);
+        border-left: 5px solid #1b5693;
+        box-shadow: 0 4px 14px rgba(4, 4, 4, 0.07);
+        transform: translateY(-1px);
+    }
+
+    .idem-card-main {
+        flex: 1;
+    }
+
+    /* Title styling & hover transition */
+    .idem-card-title {
+        color: #246eb9;
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin: 0 0 6px 0;
+        line-height: 1.35;
+        transition: color 0.18s ease;
+    }
+
+    .idem-card-link:hover .idem-card-title {
+        color: #1b5693;
+    }
+
+    /* Source metadata */
+    .idem-source {
+        color: #5f758e;
+        font-size: 0.85rem;
+        font-weight: 500;
+        margin-bottom: 8px;
+    }
+
+    /* Rationale tag pill */
+    .idem-pill {
+        background-color: #f4f1bb;
+        color: #040404;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-family: monospace;
+        border: 1px solid rgba(95, 117, 142, 0.25);
+    }
+
+    /* Summary text */
+    .idem-snippet {
+        color: #040404;
+        font-size: 0.92rem;
+        line-height: 1.45;
+    }
+
+    /* Right-aligned metric score box */
+    .idem-card-metric {
+        text-align: right;
+        min-width: 65px;
+        flex-shrink: 0;
+    }
+
+    .idem-metric-label {
+        color: #5f758e;
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+    }
+
+    .idem-metric-value {
+        color: #246eb9;
+        font-size: 1.35rem;
+        font-weight: 700;
+        transition: color 0.18s ease;
+    }
+
+    .idem-card-link:hover .idem-metric-value {
+        color: #1b5693;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # Default Portable User Profile
@@ -35,53 +144,14 @@ DEFAULT_PROFILE = {
 }
 
 # ---------------------------------------------------------
-# Content Seed Catalog
-# ---------------------------------------------------------
-FEEDS = {
-    "Anthropic Research": "https://www.anthropic.com/feed.xml",
-    "OpenAI News": "https://openai.com/news/rss.xml",
-    "Simon Willison": "https://simonwillison.net/atom/everything/",
-    "Cloudflare Blog": "https://blog.cloudflare.com/rss/",
-    "Dan Luu": "https://danluu.com/atom.xml",
-    "Hacker News": "https://news.ycombinator.com/rss",
-    "Fly.io Blog": "https://fly.io/blog/feed.atom"
-}
-
-# ---------------------------------------------------------
 # Ingestion & Normalization
 # ---------------------------------------------------------
-@st.cache_data(ttl=3600)
-def fetch_catalog():
-    items = []
-    for source_name, url in FEEDS.items():
-        try:
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:10]:
-                link = entry.get("link", "")
-                if not link:
-                    continue
-                
-                title = entry.get("title", "Untitled")
-                summary = entry.get("summary", entry.get("description", ""))
-                
-                # Parse timestamp
-                ts = time.time()
-                if entry.get("published_parsed"):
-                    ts = time.mktime(entry.published_parsed)
-                elif entry.get("updated_parsed"):
-                    ts = time.mktime(entry.updated_parsed)
-                    
-                items.append({
-                    "id": f"{source_name}_{abs(hash(link))}",
-                    "source": source_name,
-                    "title": title,
-                    "url": link,
-                    "summary": summary,
-                    "published_ts": ts
-                })
-        except Exception:
-            continue
-    return items
+# ---------------------------------------------------------
+# Unified Ingestion & Normalization
+# ---------------------------------------------------------
+@st.cache_data(ttl=900)  # 15 minutes TTL for freshness
+def load_data():
+    return fetch_unified_catalog()
 
 # ---------------------------------------------------------
 # Competing Recommendation Engines
@@ -198,28 +268,42 @@ st.sidebar.download_button(
 )
 
 # Main Feed Rendering
-raw_items = fetch_catalog()
+raw_items = load_data()
 
 engine = DirectAlignmentEngine() if "Direct" in algo_choice else FrontierDiscoveryEngine()
 ranked_results = engine.rank(raw_items, st.session_state.user_profile)
 
+unique_sources_count = len({res["item"]["source"] for res in ranked_results})
+
 st.title(f"Feed: {engine.name}")
 st.write(f"*{engine.description}*")
-st.caption(f"Evaluated {len(ranked_results)} candidate articles across {len(FEEDS)} independent sources.")
+st.caption(
+    f"Evaluated {len(ranked_results)} candidate articles across {unique_sources_count} distinct sources."
+)
 st.divider()
 
 for res in ranked_results[:20]:
     item = res["item"]
-    col_content, col_metric = st.columns([0.85, 0.15])
-    
-    with col_content:
-        st.markdown(f"### [{item['title']}]({item['url']})")
-        st.markdown(f"**{item['source']}** · `{res['rationale']}`")
-        if item["summary"]:
-            snippet = item["summary"][:260].replace("<p>", "").replace("</p>", "")
-            st.write(snippet + "..." if len(item["summary"]) > 260 else snippet)
-            
-    with col_metric:
-        st.metric("Score", res["score"])
-        
-    st.divider()
+
+    # Sanitize and truncate summary
+    raw_summary = item.get("summary", "")
+    snippet = raw_summary[:260] + "..." if len(raw_summary) > 260 else raw_summary
+
+    card_html = f"""
+    <a href="{item['url']}" target="_blank" rel="noopener noreferrer" class="idem-card-link">
+        <div class="idem-card">
+            <div class="idem-card-main">
+                <div class="idem-card-title">{html.escape(item['title'])}</div>
+                <div class="idem-source">
+                    <b>{html.escape(item['source'])}</b> · <span class="idem-pill">{html.escape(res['rationale'])}</span>
+                </div>
+                {f'<div class="idem-snippet">{html.escape(snippet)}</div>' if snippet else ''}
+            </div>
+            <div class="idem-card-metric">
+                <div class="idem-metric-label">Score</div>
+                <div class="idem-metric-value">{res['score']}</div>
+            </div>
+        </div>
+    </a>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)

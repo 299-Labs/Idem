@@ -3,8 +3,10 @@ import math
 import time
 import feedparser
 import html
+import numpy as np
 import streamlit as st
 from sources import fetch_unified_catalog
+from embeddings import compute_profile_vectors, embed_candidate_items
 
 
 st.set_page_config(page_title="Idem — Sovereign Reading", page_icon="assets/icon.png", layout="wide")
@@ -119,27 +121,44 @@ st.markdown("""
 # Default Portable User Profile
 # ---------------------------------------------------------
 DEFAULT_PROFILE = {
-    "version": "1.0.0",
+    "version": "2.0.0",
     "user_id": "eval_user_01",
     "objectives": {
-        "recency_decay_days": 7,
-        "novelty_bonus": 0.35,
-        "prefer_longform": 0.80
+        "recency_decay_days": 14,
+        "semantic_weight": 0.70,
+        "novelty_bonus": 0.25,
+        "negative_penalty": 0.40
     },
-    "interests": {
-        "distributed_systems": 0.95,
-        "inference_optimization": 0.90,
-        "llm_architecture": 0.85,
-        "databases": 0.75,
-        "security": 0.60,
-        "frontend": 0.15
+    "semantic_interests": {
+        "Inference & LLM Serving": {
+            "weight": 1.0,
+            "seeds": [
+                "vLLM speculative decoding KV cache offloading continuous batching",
+                "Triton GPU kernels CUDA flash attention FP8 quantization memory bandwidth",
+                "Model serving throughput latency distributed tensor parallelism"
+            ]
+        },
+        "Distributed Systems & Storage": {
+            "weight": 0.85,
+            "seeds": [
+                "Consensus protocols Raft Paxos formal verification TLA+",
+                "LSM tree database storage engines RocksDB write amplification",
+                "Distributed transactions serializability snapshot isolation distributed locking"
+            ]
+        },
+        "Systems Architecture & Compilers": {
+            "weight": 0.75,
+            "seeds": [
+                "LLVM compiler passes JIT intermediate representation",
+                "Linux eBPF kernel tracing performance profiling zero copy networking",
+                "Memory safety low-level systems programming concurrency"
+            ]
+        }
     },
-    "blocked_terms": [
-        "roundup",
-        "top 10",
-        "career advice",
-        "crypto",
-        "nft"
+    "negative_interests": [
+        "generic tech career advice resume tips junior bootcamp",
+        "cryptocurrency web3 token presale NFT airdrop",
+        "top 10 tools roundup shallow AI overview marketing hype"
     ]
 }
 
@@ -154,77 +173,54 @@ def load_data():
     return fetch_unified_catalog()
 
 # ---------------------------------------------------------
-# Competing Recommendation Engines
+# Semantic Alignment Engine
 # ---------------------------------------------------------
-class DirectAlignmentEngine:
-    """Algorithm A: Rewards high topical overlap and recent posts."""
-    name = "Direct Alignment"
-    description = "Optimizes strictly for declared core competencies and publication recency."
+class SemanticAlignmentEngine:
+    name = "Dense Semantic Alignment"
+    description = "Ranks content using neural embeddings against user topic centroids and negative repulsion."
 
-    def rank(self, items, profile):
-        results = []
+    def rank(self, items, profile, item_embeddings):
+        if not items or len(item_embeddings) == 0:
+            return []
+
+        u_pos, u_neg = compute_profile_vectors(profile)
         now = time.time()
-        interests = profile.get("interests", {})
-        half_life = profile.get("objectives", {}).get("recency_decay_days", 7)
-        blocked = [b.lower() for b in profile.get("blocked_terms", [])]
 
-        for item in items:
-            text = f"{item['title']} {item['summary']}".lower()
-            if any(b in text for b in blocked):
-                continue
+        objs = profile.get("objectives", {})
+        half_life = objs.get("recency_decay_days", 14)
+        neg_penalty_weight = objs.get("negative_penalty", 0.40)
+        semantic_weight = objs.get("semantic_weight", 0.70)
 
-            # Compute topic overlap
-            topic_score = 0.0
-            matched_topics = []
-            for topic, weight in interests.items():
-                clean_topic = topic.replace("_", " ")
-                if clean_topic in text:
-                    topic_score += weight
-                    matched_topics.append(clean_topic)
+        # Dot products with unit vectors equal cosine similarity
+        pos_sims = np.dot(item_embeddings, u_pos)
+        neg_sims = np.dot(item_embeddings, u_neg) if np.any(u_neg) else np.zeros(len(items))
 
-            # Compute recency decay
-            days_old = max(0, (now - item["published_ts"]) / 86400)
-            decay = math.pow(0.5, days_old / half_life)
-
-            final_score = (0.2 + topic_score) * decay
-
-            results.append({
-                "item": item,
-                "score": round(final_score, 3),
-                "rationale": f"Matched: {', '.join(matched_topics) if matched_topics else 'General relevance'} | {round(days_old, 1)}d old"
-            })
-
-        results.sort(key=lambda x: x["score"], reverse=True)
-        return results
-
-class FrontierDiscoveryEngine:
-    """Algorithm B: Penalizes source repetition and rewards peripheral exploration."""
-    name = "Frontier Discovery"
-    description = "Introduces novelty and enforces domain diversity across the slate."
-
-    def rank(self, items, profile):
         results = []
-        source_counts = {}
-        blocked = [b.lower() for b in profile.get("blocked_terms", [])]
-        novelty_bonus = profile.get("objectives", {}).get("novelty_bonus", 0.35)
+        for idx, item in enumerate(items):
+            sim_pos = float(pos_sims[idx])
+            sim_neg = float(neg_sims[idx])
 
-        for item in items:
-            text = f"{item['title']} {item['summary']}".lower()
-            if any(b in text for b in blocked):
-                continue
+            # Net semantic relevance (penalize if close to negative seeds)
+            net_relevance = max(0.0, sim_pos - (sim_neg * neg_penalty_weight))
 
-            # Diversity damper: penalize repetitive sources
-            source = item["source"]
-            repetition_penalty = 0.75 ** source_counts.get(source, 0)
+            # Recency factor
+            days_old = max(0.0, (now - item["published_ts"]) / 86400.0)
+            recency_decay = math.pow(0.5, days_old / half_life)
 
-            base_score = 0.5 + novelty_bonus
-            final_score = base_score * repetition_penalty
-            source_counts[source] = source_counts.get(source, 0) + 1
+            # Technical depth heuristic: boost if external link points to engineering domains
+            depth_bonus = 0.0
+            url = item.get("url", "")
+            if any(dom in url for dom in ["arxiv.org", "github.com", "danluu.com", "blog.cloudflare.com"]):
+                depth_bonus = 0.15
+
+            # Final Score calculation
+            base_score = (net_relevance * semantic_weight) + depth_bonus
+            final_score = base_score * (0.4 + 0.6 * recency_decay)
 
             results.append({
                 "item": item,
-                "score": round(final_score, 3),
-                "rationale": f"Diversity-weighted discovery | Source count penalty applied ({source})"
+                "score": round(float(final_score), 3),
+                "rationale": f"Sim: {round(sim_pos, 2)} | Neg: -{round(sim_neg * neg_penalty_weight, 2)} | {round(days_old, 1)}d old"
             })
 
         results.sort(key=lambda x: x["score"], reverse=True)
@@ -242,7 +238,7 @@ st.sidebar.caption("User-Controlled Preference Model")
 
 algo_choice = st.sidebar.radio(
     "Active Recommendation Engine",
-    ["Algorithm A: Direct Alignment", "Algorithm B: Frontier Discovery"],
+    ["Algorithm A: Semantic Alignment", "Algorithm B: Frontier Discovery"],
     help="Switch the active ranking engine while retaining your preferences."
 )
 
@@ -268,10 +264,18 @@ st.sidebar.download_button(
 )
 
 # Main Feed Rendering
-raw_items = load_data()
+raw_items = load_data() or []
 
-engine = DirectAlignmentEngine() if "Direct" in algo_choice else FrontierDiscoveryEngine()
-ranked_results = engine.rank(raw_items, st.session_state.user_profile)
+# Cache embedding generation for the candidate set
+@st.cache_data(show_spinner="Embedding catalog...")
+def get_cached_item_embeddings(items_data):
+    return embed_candidate_items(items_data)
+
+item_embeddings = get_cached_item_embeddings(raw_items)
+
+# Rank using the new semantic engine
+engine = SemanticAlignmentEngine()
+ranked_results = engine.rank(raw_items, st.session_state.user_profile, item_embeddings)
 
 unique_sources_count = len({res["item"]["source"] for res in ranked_results})
 

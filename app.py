@@ -248,15 +248,22 @@ def rank_candidates(candidates: list, profile: dict, u_neg: np.ndarray) -> list:
 
         net_relevance = max(0.0, sim_pos - (sim_neg * neg_penalty_weight))
 
-        # Log-damped recency allows all-time gems to surface while honoring freshness
+        # 1. Standard recency decay for timely news
         days_old = max(0.0, (now - item["published_ts"]) / 86400.0)
-        recency_decay = math.pow(0.5, days_old / half_life)
+        standard_recency = math.pow(0.5, days_old / half_life)
+
+        # 2. Log-damped decay for all-time gems (drops slowly, never zeroes out)
+        # A 3-year-old post retains ~35% of its temporal weight
+        all_time_factor = 1.0 / (1.0 + 0.08 * math.log1p(days_old))
+
+        # 3. Blend: timely content gets a freshness boost, but high-scoring gems can still win
+        temporal_multiplier = max(standard_recency, 0.40 * all_time_factor)
 
         # Technical depth bonus
         domain = item.get("domain", "")
         depth_bonus = 0.15 if any(d in domain for d in ["arxiv.org", "github.com", "danluu.com", "cloudflare.com"]) else 0.0
 
-        final_score = ((net_relevance * 0.75) + depth_bonus) * (0.35 + 0.65 * recency_decay)
+        final_score = ((net_relevance + depth_bonus) * temporal_multiplier)
 
         results.append({
             "item": item,

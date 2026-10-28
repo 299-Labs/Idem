@@ -26,12 +26,18 @@ def get_connection():
 
 def init_db():
     """Initializes the pgvector extension, table, and HNSW index."""
+    # 1. Connect raw first to ensure the extension exists before register_vector is called
+    raw_conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with raw_conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+        raw_conn.commit()
+    finally:
+        raw_conn.close()
+
+    # 2. Now connect via get_connection() where register_vector will succeed
     with get_connection() as conn:
         with conn.cursor() as cur:
-            # 1. Enable pgvector
-            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-
-            # 2. Candidate items table (384 dimensions for all-MiniLM-L6-v2)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS items (
                     id TEXT PRIMARY KEY,
@@ -50,7 +56,6 @@ def init_db():
                 );
             """)
 
-            # 3. Create HNSW index for sub-10ms Approximate Nearest Neighbor (ANN) search
             cur.execute("""
                 CREATE INDEX IF NOT EXISTS items_embedding_hnsw 
                 ON items USING hnsw (embedding vector_cosine_ops)

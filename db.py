@@ -144,6 +144,6 @@ def retrieve_candidates(u_pos: np.ndarray, limit: int = 1000) -> List[Dict[str, 
             "domain": r[7],
             "metrics": {"likes": r[8], "reposts": r[9], "replies": r[10]},
             "vector_similarity": float(r[11]),
-            "embedding": np.array(r[12], dtype=np.float32)
+            "embedding": r[12].to_numpy().astype(np.float32) if hasattr(r[12], "to_numpy") else np.array(r[12], dtype=np.float32)
         })
     return candidates

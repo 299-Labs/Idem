@@ -271,6 +271,9 @@ def rank_candidates(candidates: list, profile: dict, u_neg: np.ndarray) -> list:
 if "user_profile" not in st.session_state:
     st.session_state.user_profile = DEFAULT_PROFILE
 
+if "items_limit" not in st.session_state:
+    st.session_state.items_limit = 20
+
 # Sidebar: Profile & Controls
 st.sidebar.title("Idem Identity Layer")
 st.sidebar.caption("User-Controlled Preference Model")

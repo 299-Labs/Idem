@@ -7,6 +7,7 @@ import numpy as np
 import streamlit as st
 from db import retrieve_candidates
 from embeddings import compute_profile_vectors
+from rerank import mmr_rerank
 from sources import fetch_unified_catalog
 
 
@@ -310,21 +311,38 @@ st.sidebar.download_button(
 # ---------------------------------------------------------
 u_pos, u_neg = compute_profile_vectors(st.session_state.user_profile)
 
-# Stage 1: ANN Query from Postgres via HNSW (<10ms)
-candidates = retrieve_candidates(u_pos, limit=1000)
+# -------------------------------------------------------------
+# STAGE 1: Candidate Generation (Database ANN, Top 1,000)
+# -------------------------------------------------------------
+candidate_pool = retrieve_candidates(u_pos, limit=1000)
 
-# Stage 2: Coarse Scoring & Ranking
-ranked_results = rank_candidates(candidates, st.session_state.user_profile, u_neg)
+if not candidate_pool:
+    st.info("The database has no indexed articles yet. Run `python worker.py` to populate it.")
+    st.stop()
 
+# -------------------------------------------------------------
+# STAGE 2: Coarse Scoring & Filtering (1,000 -> 50)
+# -------------------------------------------------------------
+coarse_ranked = rank_candidates(candidate_pool, st.session_state.user_profile, u_neg)
+top_candidates = coarse_ranked[:50]
+
+# -------------------------------------------------------------
+# STAGE 3: Heavy Reranker & Diversification (50 -> 20)
+# -------------------------------------------------------------
+final_slate = mmr_rerank(top_candidates, target_k=20, lambda_param=0.72)
+
+# -------------------------------------------------------------
+# STAGE 4: Streamlit Presentation & Load More
+# -------------------------------------------------------------
 st.title("Feed: Dense Semantic Alignment")
-st.caption(f"Retrieved {len(candidates)} candidate items from database via HNSW index.")
+st.caption(f"Retrieved {len(candidates)} candidate items from database via HNSW index."
+           f" MMR-diversified to {len(final_slate)} items.")
 st.divider()
 
-if not ranked_results:
-    st.info("The database has no indexed articles yet. Run `python worker.py` to populate it.")
+visible_items = final_slate[:st.session_state.items_limit]
 
-# Render visible slice
-visible_items = ranked_results[:st.session_state.items_limit]
+if not final_slate:
+    st.info("No articles match your current profile preferences. Edit your profile in the sidebar.")
 
 for res in visible_items:
     item = res["item"]
@@ -337,7 +355,7 @@ for res in visible_items:
             <div class="idem-card-main">
                 <div class="idem-card-title">{html.escape(item['title'])}</div>
                 <div class="idem-source">
-                    <b>{html.escape(item['source'])}</b> · <span class="idem-pill">{html.escape(res['rationale'])}</span>
+                    <b>{html.escape(item['source'])}</b> · <span class="idem-pill">MMR rank: {res.get('diversity_rank', '—')}</span>
                 </div>
                 {f'<div class="idem-snippet">{html.escape(snippet)}</div>' if snippet else ''}
             </div>
@@ -351,7 +369,7 @@ for res in visible_items:
     st.markdown(card_html, unsafe_allow_html=True)
 
 # Pagination button
-if st.session_state.items_limit < len(ranked_results):
+if st.session_state.items_limit < len(final_slate):
     col_a, col_b, col_c = st.columns([1, 2, 1])
     with col_b:
         if st.button("Load More Articles ↓", use_container_width=True):

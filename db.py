@@ -8,11 +8,15 @@ from pgvector.psycopg2 import register_vector
 import numpy as np
 from typing import List, Dict, Any
 from dotenv import load_dotenv
+from pathlib import Path
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql://idem_user:password@localhost:5432/idem"
-)
+# Explicitly load .env from the directory containing db.py
+env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=env_path)
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is missing or empty.")
 
 def get_connection():
     conn = psycopg2.connect(DATABASE_URL)

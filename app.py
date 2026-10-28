@@ -5,8 +5,9 @@ import feedparser
 import html
 import numpy as np
 import streamlit as st
+from db import retrieve_candidates
+from embeddings import compute_profile_vectors
 from sources import fetch_unified_catalog
-from embeddings import compute_profile_vectors, embed_candidate_items
 
 
 st.set_page_config(page_title="Idem — Sovereign Reading", page_icon="assets/icon.png", layout="wide")
@@ -226,6 +227,44 @@ class SemanticAlignmentEngine:
         results.sort(key=lambda x: x["score"], reverse=True)
         return results
 
+
+# ---------------------------------------------------------
+# Two-Tower Coarse Scoring (Stage 2)
+# ---------------------------------------------------------
+def rank_candidates(candidates: list, profile: dict, u_neg: np.ndarray) -> list:
+    """
+    Stage 2: Coarse scoring on the retrieved candidate pool.
+    """
+    objs = profile.get("objectives", {})
+    half_life = objs.get("recency_decay_days", 14)
+    neg_penalty_weight = objs.get("negative_penalty", 0.40)
+    now = time.time()
+
+    results = []
+    for item in candidates:
+        sim_pos = item["vector_similarity"]
+        sim_neg = float(np.dot(item["embedding"], u_neg)) if np.any(u_neg) else 0.0
+
+        net_relevance = max(0.0, sim_pos - (sim_neg * neg_penalty_weight))
+
+        # Log-damped recency allows all-time gems to surface while honoring freshness
+        days_old = max(0.0, (now - item["published_ts"]) / 86400.0)
+        recency_decay = math.pow(0.5, days_old / half_life)
+
+        # Technical depth bonus
+        domain = item.get("domain", "")
+        depth_bonus = 0.15 if any(d in domain for d in ["arxiv.org", "github.com", "danluu.com", "cloudflare.com"]) else 0.0
+
+        final_score = ((net_relevance * 0.75) + depth_bonus) * (0.35 + 0.65 * recency_decay)
+
+        results.append({
+            "item": item,
+            "score": round(float(final_score), 3),
+            "rationale": f"Sim: {round(sim_pos, 2)} | Neg: -{round(sim_neg * neg_penalty_weight, 2)} | {round(days_old, 1)}d old"
+        })
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results
 # ---------------------------------------------------------
 # User Interface
 # ---------------------------------------------------------
@@ -263,33 +302,29 @@ st.sidebar.download_button(
     mime="application/json"
 )
 
-# Main Feed Rendering
-raw_items = load_data() or []
+# ---------------------------------------------------------
+# Two-Tower Recommendation Engine
+# ---------------------------------------------------------
+u_pos, u_neg = compute_profile_vectors(st.session_state.user_profile)
 
-# Cache embedding generation for the candidate set
-@st.cache_data(show_spinner="Embedding catalog...")
-def get_cached_item_embeddings(items_data):
-    return embed_candidate_items(items_data)
+# Stage 1: ANN Query from Postgres via HNSW (<10ms)
+candidates = retrieve_candidates(u_pos, limit=1000)
 
-item_embeddings = get_cached_item_embeddings(raw_items)
+# Stage 2: Coarse Scoring & Ranking
+ranked_results = rank_candidates(candidates, st.session_state.user_profile, u_neg)
 
-# Rank using the new semantic engine
-engine = SemanticAlignmentEngine()
-ranked_results = engine.rank(raw_items, st.session_state.user_profile, item_embeddings)
-
-unique_sources_count = len({res["item"]["source"] for res in ranked_results})
-
-st.title(f"Feed: {engine.name}")
-st.write(f"*{engine.description}*")
-st.caption(
-    f"Evaluated {len(ranked_results)} candidate articles across {unique_sources_count} distinct sources."
-)
+st.title("Feed: Dense Semantic Alignment")
+st.caption(f"Retrieved {len(candidates)} candidate items from database via HNSW index.")
 st.divider()
 
-for res in ranked_results[:20]:
-    item = res["item"]
+if not ranked_results:
+    st.info("The database has no indexed articles yet. Run `python worker.py` to populate it.")
 
-    # Sanitize and truncate summary
+# Render visible slice
+visible_items = ranked_results[:st.session_state.items_limit]
+
+for res in visible_items:
+    item = res["item"]
     raw_summary = item.get("summary", "")
     snippet = raw_summary[:260] + "..." if len(raw_summary) > 260 else raw_summary
 
@@ -311,3 +346,11 @@ for res in ranked_results[:20]:
     </a>
     """
     st.markdown(card_html, unsafe_allow_html=True)
+
+# Pagination button
+if st.session_state.items_limit < len(ranked_results):
+    col_a, col_b, col_c = st.columns([1, 2, 1])
+    with col_b:
+        if st.button("Load More Articles ↓", use_container_width=True):
+            st.session_state.items_limit += 20
+            st.rerun()

@@ -1,0 +1,16 @@
+services:
+  idem-db-local:
+    image: pgvector/pgvector:pg16
+    container_name: idem-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-idem}
+      POSTGRES_USER: ${POSTGRES_USER:-idem_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - idem_pgdata:/var/lib/postgresql/data
+
+volumes:
+  idem_pgdata:

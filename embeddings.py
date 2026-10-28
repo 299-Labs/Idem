@@ -3,18 +3,26 @@ embeddings.py — Vector computation and profile centroid synthesis for Idem.
 """
 from typing import Any, Dict, List, Tuple
 import numpy as np
+import streamlit as st
 from sentence_transformers import SentenceTransformer
 
-# Load model once at module level (lazy-loaded when imported)
-_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-_model = None
-
-
+@st.cache_resource(show_spinner=False)
 def get_embedding_model() -> SentenceTransformer:
-    global _model
-    if _model is None:
-        _model = SentenceTransformer(_MODEL_NAME)
-    return _model
+    """
+    Attempts an instantaneous offline load from the local cache.
+    If the model has never been downloaded (or the model name was changed),
+    it pulls the weights from Hugging Face Hub once and caches them.
+    """
+    try:
+        # Fast path: Load strictly from local cache (0 HTTP calls)
+        return SentenceTransformer(_MODEL_NAME, local_files_only=True)
+    except Exception:
+        # Cold start: Not in cache or missing files; download from remote Hub
+        print(f"[Model Loader] '{_MODEL_NAME}' not found in local cache. Downloading...")
+        return SentenceTransformer(_MODEL_NAME, local_files_only=False)
+
+
+_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 def embed_texts(texts: List[str]) -> np.ndarray:

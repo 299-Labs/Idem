@@ -4,3 +4,7 @@ backgroundColor = "#cee0ff"
 secondaryBackgroundColor = "#afccff"
 textColor = "#040404"
 font = "sans serif"
+[server]
+folderWatchBlacklist = ['**/venv/**', '**/site-packages/**']
+fileWatcherType = "none"
+headless = true

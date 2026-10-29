@@ -342,7 +342,7 @@ final_slate = mmr_rerank(top_candidates, target_k=20, lambda_param=0.72)
 # STAGE 4: Streamlit Presentation & Load More
 # -------------------------------------------------------------
 st.title("Feed: Dense Semantic Alignment")
-st.caption(f"Retrieved {len(candidates)} candidate items from database via HNSW index."
+st.caption(f"Retrieved {len(candidate_pool)} candidate items from database via HNSW index."
            f" MMR-diversified to {len(final_slate)} items.")
 st.divider()
 

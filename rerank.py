@@ -25,7 +25,7 @@ def mmr_rerank(
     Greedily selects target_k items using Maximal Marginal Relevance:
     MMR = argmax [ lambda * Sim(item, User) - (1 - lambda) * max(Sim(item, Selected)) ]
     
-    :param candidates: Pre-filtered list of candidate dicts (must contain 'embedding' and 'score').
+    :param candidates: Pre-filtered list of candidate dicts (must contain 'item' with 'embedding', and 'score').
     :param target_k: Number of final diverse items to return (e.g., 20).
     :param lambda_param: 1.0 = pure relevance, 0.0 = maximum diversity. 0.70 is the sweet spot.
     """
@@ -35,7 +35,9 @@ def mmr_rerank(
     if len(candidates) <= target_k:
         return candidates
 
-    embeddings = np.array([c["embedding"] for c in candidates], dtype=np.float32)
+    # Candidates from the pipeline have structure {"item": {..., "embedding": ...}, "score": float, "rationale": str}
+    # Extract embeddings and scores from the item wrapper
+    embeddings = np.array([c["item"]["embedding"] for c in candidates], dtype=np.float32)
     relevance_scores = np.array([c["score"] for c in candidates], dtype=np.float32)
 
     # 1. Normalize relevance scores to [0, 1] so they are scale-compatible with cosine similarity
@@ -84,8 +86,9 @@ def mmr_rerank(
     # Build the final ordered slate with diversity metadata
     diversified_slate = []
     for rank, idx in enumerate(selected_indices):
-        item_dict = candidates[idx].copy()
+        item_dict = candidates[idx]["item"].copy()
         item_dict["diversity_rank"] = rank + 1
+        item_dict["rerank_score"] = candidates[idx]["score"]
         diversified_slate.append(item_dict)
 
     return diversified_slate

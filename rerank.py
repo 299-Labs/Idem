@@ -86,9 +86,11 @@ def mmr_rerank(
     # Build the final ordered slate with diversity metadata
     diversified_slate = []
     for rank, idx in enumerate(selected_indices):
-        item_dict = candidates[idx]["item"].copy()
+        # Preserve the {"item": item_dict, "score": ..., "rationale": ...} wrapper
+        # that the Streamlit rendering code expects at app.py line 355: item = res["item"]
+        original = candidates[idx]
+        item_dict = {"item": original["item"], "score": original["score"], "rationale": original.get("rationale", "")}
         item_dict["diversity_rank"] = rank + 1
-        item_dict["rerank_score"] = candidates[idx]["score"]
         diversified_slate.append(item_dict)
 
     return diversified_slate

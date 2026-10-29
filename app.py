@@ -25,7 +25,7 @@ st.markdown("""
 
     /* Base card: borderless by default (transparent prevents layout shifts on hover) */
     .idem-card {
-        background-color: #cee0ff;
+        background-color: #EAE8FF;
         border-radius: 8px;
         padding: 16px 20px;
         display: flex;
@@ -116,6 +116,23 @@ st.markdown("""
     .idem-card-link:hover .idem-metric-value {
         color: #1b5693;
     }
+
+    /* Fix sidebar download button white background */
+    [data-testid="stSidebar"] [data-testid="stDownloadButton"] > button,
+    [data-testid="stSidebar"] .stDownloadButton > button {
+        background-color: transparent !important;
+        border: 1px solid rgba(95, 117, 142, 0.3) !important;
+        color: #246eb9 !important;
+        transition: all 0.18s ease-in-out !important;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stDownloadButton"] > button:hover,
+    [data-testid="stSidebar"] .stDownloadButton > button:hover {
+        background-color: rgba(36, 110, 185, 0.08) !important;
+        border-color: #1b5693 !important;
+        color: #1b5693 !important;
+    }
+    
 </style>
 """, unsafe_allow_html=True)
 

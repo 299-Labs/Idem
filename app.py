@@ -1,17 +1,6 @@
-import json
-import math
-import time
-import feedparser
-import html
-import numpy as np
 import streamlit as st
-from db import retrieve_candidates
-from embeddings import compute_profile_vectors
-from rerank import mmr_rerank
-from sources import fetch_unified_catalog
 
-
-st.set_page_config(page_title="Idem — Sovereign Reading", page_icon="assets/icon.png", layout="wide")
+st.set_page_config(page_title="Idem — Own Your Reading", layout="wide")
 
 st.markdown("""
 <style>
@@ -132,7 +121,7 @@ st.markdown("""
         border-color: #1b5693 !important;
         color: #1b5693 !important;
     }
-    
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -180,6 +169,18 @@ DEFAULT_PROFILE = {
         "top 10 tools roundup shallow AI overview marketing hype"
     ]
 }
+
+import json
+import math
+import time
+import feedparser
+import html
+import numpy as np
+
+from db import retrieve_candidates
+from embeddings import compute_profile_vectors
+from rerank import mmr_rerank
+from sources import fetch_unified_catalog
 
 # ---------------------------------------------------------
 # Ingestion & Normalization
@@ -300,13 +301,13 @@ if "items_limit" not in st.session_state:
     st.session_state.items_limit = 20
 
 # Sidebar: Profile & Controls
-st.sidebar.title("Idem Identity Layer")
-st.sidebar.caption("User-Controlled Preference Model")
+st.sidebar.title("Customization Page")
+st.sidebar.caption("User-Controlled Recommendations")
 
 algo_choice = st.sidebar.radio(
-    "Active Recommendation Engine",
-    ["Algorithm A: Semantic Alignment", "Algorithm B: Frontier Discovery"],
-    help="Switch the active ranking engine while retaining your preferences."
+    "Active Recommendation Algorithm",
+    ["Exploit", "Explore"],
+    help="Switch the active recommendation algorithm while retaining your preferences."
 )
 
 with st.sidebar.expander("Inspect & Edit Portable Profile"):

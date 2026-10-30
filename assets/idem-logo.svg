@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="2000" viewBox="-2 -2 120 120" role="img" aria-label="Idem logo mark">
+  <path d="M60 16 A20 20 0 0 0 60 56 Z" fill="#1b5693"/>
+  <path d="M60 16 A20 20 0 0 1 60 56 Z" fill="none" stroke="#5f758e" stroke-width="2" stroke-dasharray="4 4"/>
+  <path d="M60 16 A20 20 0 0 1 60 56 Z" fill="#f4f1bb" stroke="#1b5693" stroke-width="2" transform="translate(8 -8)"/>
+  <path d="M16 108 A40 40 0 0 1 56 68 L56 108 Z" fill="#246eb9"/>
+  <path d="M60 68 A40 40 0 0 1 100 108 L60 108 Z" fill="#1b5693"/>
+</svg>
